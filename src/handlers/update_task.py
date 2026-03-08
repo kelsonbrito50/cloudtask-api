@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 import boto3
 
 from models.task import VALID_PRIORITIES, VALID_STATUSES
-from utils.response import success, error
 from utils.logger import get_logger
+from utils.response import error, success
 
 logger = get_logger(__name__)
 
@@ -34,7 +34,8 @@ def handler(event, context):
     updates = {k: v for k, v in body.items() if k in UPDATABLE_FIELDS}
 
     if not updates:
-        return error(f"No valid fields to update. Allowed: {', '.join(UPDATABLE_FIELDS)}")
+        allowed = ", ".join(UPDATABLE_FIELDS)
+        return error(f"No valid fields to update. Allowed: {allowed}")
 
     # Validate fields
     if "priority" in updates and updates["priority"] not in VALID_PRIORITIES:

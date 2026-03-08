@@ -1,7 +1,7 @@
 """Structured logging for Lambda functions."""
 
-import logging
 import json
+import logging
 import os
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

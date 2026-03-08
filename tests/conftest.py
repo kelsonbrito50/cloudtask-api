@@ -1,8 +1,9 @@
 """Shared test fixtures — mocked AWS services via moto."""
 
 import json
-import pytest
+
 import boto3
+import pytest
 from moto import mock_aws
 
 
@@ -59,7 +60,10 @@ def sns_topic():
         yield response["TopicArn"]
 
 
-def make_event(method="GET", path="/tasks", body=None, path_params=None, query_params=None):
+def make_event(
+    method="GET", path="/tasks", body=None,
+    path_params=None, query_params=None,
+):
     """Helper to create API Gateway proxy event."""
     event = {
         "httpMethod": method,

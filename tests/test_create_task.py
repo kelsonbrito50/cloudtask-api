@@ -3,7 +3,6 @@
 import json
 from unittest.mock import patch
 
-
 from tests.conftest import make_event
 
 
@@ -117,4 +116,5 @@ class TestCreateTask:
             handler(event, None)
 
             call_kwargs = mock_sqs.send_message.call_args[1]
-            assert call_kwargs["MessageAttributes"]["priority"]["StringValue"] == "critical"
+            attrs = call_kwargs["MessageAttributes"]
+            assert attrs["priority"]["StringValue"] == "critical"

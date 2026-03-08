@@ -1,10 +1,9 @@
 """Task model with validation."""
 
-from dataclasses import dataclass, field, asdict
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
-import uuid
-
 
 VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 VALID_STATUSES = {"pending", "processing", "completed", "failed"}

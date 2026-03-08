@@ -64,7 +64,13 @@ class TestProcessTask:
 
         def mock_get_item(**kwargs):
             tid = kwargs["Key"]["task_id"]
-            return {"Item": {"task_id": tid, "title": f"Task {tid}", "priority": "medium"}}
+            return {
+                "Item": {
+                    "task_id": tid,
+                    "title": f"Task {tid}",
+                    "priority": "medium",
+                }
+            }
 
         with patch("handlers.process_task.table") as mock_table, \
              patch("handlers.process_task.sns") as mock_sns:

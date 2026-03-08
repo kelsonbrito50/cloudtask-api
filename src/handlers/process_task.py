@@ -51,7 +51,8 @@ def handler(event, context):
             # - Call external APIs
             # - Run computations
             # - Process file uploads
-            result = f"Processed: {task['title']} (priority: {task.get('priority', 'medium')})"
+            priority = task.get("priority", "medium")
+            result = f"Processed: {task['title']} (priority: {priority})"
 
             # Update status to completed
             table.update_item(
