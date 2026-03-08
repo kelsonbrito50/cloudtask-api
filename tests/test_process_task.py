@@ -1,7 +1,7 @@
 """Tests for SQS consumer — process_task handler."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestProcessTask:

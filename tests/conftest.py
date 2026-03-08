@@ -1,6 +1,5 @@
 """Shared test fixtures — mocked AWS services via moto."""
 
-import os
 import json
 import pytest
 import boto3

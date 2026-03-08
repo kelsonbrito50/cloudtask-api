@@ -1,6 +1,6 @@
 output "api_url" {
   description = "Base URL of the CloudTask API"
-  value       = "${aws_api_gateway_deployment.main.invoke_url}${var.api_stage_name}"
+  value       = aws_api_gateway_stage.main.invoke_url
 }
 
 output "api_gateway_id" {

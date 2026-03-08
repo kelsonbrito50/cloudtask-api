@@ -1,9 +1,8 @@
 """Tests for POST /tasks — create_task handler."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from tests.conftest import make_event
 

@@ -3,9 +3,8 @@
 import os
 
 import boto3
-from boto3.dynamodb.conditions import Attr
 
-from utils.response import success, error
+from utils.response import success
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
