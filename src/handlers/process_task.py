@@ -1,4 +1,4 @@
-"""SQS Consumer — Process queued tasks asynchronously."""
+"""SQS Worker — Processes queued tasks asynchronously."""
 
 import json
 import os
@@ -6,95 +6,88 @@ from datetime import datetime, timezone
 
 import boto3
 
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-dynamodb = boto3.resource("dynamodb")
-sns = boto3.client("sns")
-table = dynamodb.Table(os.environ["TABLE_NAME"])
-topic_arn = os.environ["TOPIC_ARN"]
+from utils.logger import log_event
 
 
 def handler(event, context):
-    """Process each SQS message (batch of up to 5 tasks)."""
-    failed_ids = []
+    """Process each SQS message (batch of up to 5)."""
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table(os.environ["TABLE_NAME"])
+    sns = boto3.client("sns")
+    topic_arn = os.environ["TOPIC_ARN"]
 
     for record in event.get("Records", []):
         try:
             message = json.loads(record["body"])
             task_id = message["task_id"]
-            logger.info(f"Processing task {task_id}")
+            log_event("processing_started", {"task_id": task_id})
 
-            # Fetch task from DynamoDB
             response = table.get_item(Key={"task_id": task_id})
             task = response.get("Item")
 
             if not task:
-                logger.warning(f"Task {task_id} not found, skipping")
+                log_event("task_not_found", {"task_id": task_id})
                 continue
 
-            # Update status to processing
+            now = datetime.now(timezone.utc).isoformat()
+
             table.update_item(
                 Key={"task_id": task_id},
-                UpdateExpression="SET #s = :s, #u = :u",
-                ExpressionAttributeNames={"#s": "status", "#u": "updated_at"},
+                UpdateExpression="SET #s = :s, updated_at = :u",
+                ExpressionAttributeNames={"#s": "status"},
                 ExpressionAttributeValues={
                     ":s": "processing",
-                    ":u": datetime.now(timezone.utc).isoformat(),
+                    ":u": now,
                 },
             )
 
-            # ── Task processing logic ──
-            # Replace this with actual business logic:
-            # - Generate reports
-            # - Call external APIs
-            # - Run computations
-            # - Process file uploads
             priority = task.get("priority", "medium")
-            result = f"Processed: {task['title']} (priority: {priority})"
+            result = (
+                f"Processed task: {task['title']} "
+                f"(priority: {priority})"
+            )
 
-            # Update status to completed
+            now = datetime.now(timezone.utc).isoformat()
             table.update_item(
                 Key={"task_id": task_id},
-                UpdateExpression="SET #s = :s, #r = :r, #u = :u",
+                UpdateExpression=(
+                    "SET #s = :s, #r = :r, "
+                    "completed_at = :c, updated_at = :u"
+                ),
                 ExpressionAttributeNames={
                     "#s": "status",
                     "#r": "result",
-                    "#u": "updated_at",
                 },
                 ExpressionAttributeValues={
                     ":s": "completed",
                     ":r": result,
-                    ":u": datetime.now(timezone.utc).isoformat(),
+                    ":c": now,
+                    ":u": now,
                 },
             )
 
-            # Send completion notification via SNS
             sns.publish(
                 TopicArn=topic_arn,
-                Subject=f"Task completed: {task['title']}",
-                Message=json.dumps({
-                    "task_id": task_id,
-                    "title": task["title"],
-                    "status": "completed",
-                    "result": result,
-                }, default=str),
+                Subject=f"Task Completed: {task['title']}",
+                Message=json.dumps(
+                    {
+                        "task_id": task_id,
+                        "title": task["title"],
+                        "status": "completed",
+                        "result": result,
+                    },
+                    indent=2,
+                ),
             )
 
-            logger.info(f"Completed task {task_id}")
+            log_event(
+                "processing_completed", {"task_id": task_id}
+            )
 
         except Exception as e:
-            task_id = json.loads(record["body"]).get("task_id", "unknown")
-            logger.error(f"Failed to process task {task_id}: {str(e)}")
-            failed_ids.append(record["messageId"])
-
-    # Report partial batch failures for SQS retry
-    if failed_ids:
-        return {
-            "batchItemFailures": [
-                {"itemIdentifier": mid} for mid in failed_ids
-            ]
-        }
-
-    return {"batchItemFailures": []}
+            tid = message.get("task_id", "unknown")
+            log_event("processing_failed", {
+                "task_id": tid,
+                "error": str(e),
+            })
+            raise

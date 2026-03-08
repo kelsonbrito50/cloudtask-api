@@ -3,41 +3,30 @@
 import os
 
 import boto3
+from boto3.dynamodb.conditions import Attr
 
-from utils.logger import get_logger
 from utils.response import success
 
-logger = get_logger(__name__)
-
-dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(os.environ["TABLE_NAME"])
+VALID_STATUSES = {"pending", "processing", "completed", "failed"}
 
 
 def handler(event, context):
-    """List tasks with optional status filter via query parameter."""
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table(os.environ["TABLE_NAME"])
+
     params = event.get("queryStringParameters") or {}
-    status_filter = params.get("status")
-    limit = min(int(params.get("limit", 50)), 100)
+    status_filter = params.get("status", "").lower()
 
-    scan_kwargs = {"Limit": limit}
-
-    if status_filter:
-        # Use GSI for status filtering
-        response = table.query(
-            IndexName="status-index",
-            KeyConditionExpression=boto3.dynamodb.conditions.Key("status").eq(
-                status_filter
-            ),
-            Limit=limit,
+    if status_filter and status_filter in VALID_STATUSES:
+        response = table.scan(
+            FilterExpression=Attr("status").eq(status_filter)
         )
     else:
-        response = table.scan(**scan_kwargs)
+        response = table.scan()
 
     tasks = response.get("Items", [])
-    logger.info(f"Listed {len(tasks)} tasks (filter={status_filter})")
+    tasks.sort(
+        key=lambda t: t.get("created_at", ""), reverse=True
+    )
 
-    return success({
-        "tasks": tasks,
-        "count": len(tasks),
-        "has_more": "LastEvaluatedKey" in response,
-    })
+    return success({"count": len(tasks), "tasks": tasks})

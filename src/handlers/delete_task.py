@@ -4,33 +4,23 @@ import os
 
 import boto3
 
-from utils.logger import get_logger
+from utils.logger import log_event
 from utils.response import error, success
-
-logger = get_logger(__name__)
-
-dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(os.environ["TABLE_NAME"])
 
 
 def handler(event, context):
-    """Delete a task by task_id."""
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table(os.environ["TABLE_NAME"])
+
     task_id = event.get("pathParameters", {}).get("id")
-
     if not task_id:
-        return error("task_id is required", 400)
+        return error("Task ID is required", 400)
 
-    try:
-        response = table.delete_item(
-            Key={"task_id": task_id},
-            ConditionExpression="attribute_exists(task_id)",
-            ReturnValues="ALL_OLD",
-        )
-    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+    response = table.get_item(Key={"task_id": task_id})
+    if "Item" not in response:
         return error("Task not found", 404)
 
-    logger.info(f"Deleted task {task_id}")
-    return success({
-        "message": "Task deleted",
-        "task": response.get("Attributes", {}),
-    })
+    table.delete_item(Key={"task_id": task_id})
+    log_event("task_deleted", {"task_id": task_id})
+
+    return success({"message": f"Task {task_id} deleted"})

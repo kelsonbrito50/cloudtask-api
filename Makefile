@@ -1,40 +1,26 @@
-.PHONY: test lint fmt validate deploy clean
+.PHONY: install test lint fmt tf-init tf-plan tf-apply tf-destroy
 
-# ── Development ──
+install:
+	pip install -r requirements-dev.txt
 
 test:
-	python -m pytest tests/ -v --tb=short
-
-test-cov:
-	python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing
+	PYTHONPATH=src python -m pytest tests/ -v --tb=short --cov=src
 
 lint:
 	ruff check src/ tests/
 
 fmt:
 	ruff format src/ tests/
+	cd terraform && terraform fmt
 
-# ── Terraform ──
+tf-init:
+	cd terraform && terraform init
 
-validate:
-	cd terraform && terraform init -backend=false && terraform validate
-
-plan:
+tf-plan:
 	cd terraform && terraform plan
 
-deploy:
-	cd terraform && terraform apply -auto-approve
+tf-apply:
+	cd terraform && terraform apply
 
-destroy:
+tf-destroy:
 	cd terraform && terraform destroy
-
-# ── Packaging ──
-
-package:
-	mkdir -p terraform/.build
-	cd src && zip -r ../terraform/.build/lambda.zip . -x "__pycache__/*" "*.pyc"
-
-clean:
-	rm -rf terraform/.build
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -name "*.pyc" -delete

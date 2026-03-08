@@ -1,11 +1,10 @@
 """Standardized API response helpers."""
 
 import json
-from typing import Any
 
 
-def success(body: dict[str, Any], status_code: int = 200) -> dict:
-    """Return a successful API Gateway response."""
+def success(body, status_code=200):
+    """Return a success response."""
     return {
         "statusCode": status_code,
         "headers": {
@@ -16,8 +15,8 @@ def success(body: dict[str, Any], status_code: int = 200) -> dict:
     }
 
 
-def error(message: str, status_code: int = 400) -> dict:
-    """Return an error API Gateway response."""
+def error(message, status_code=400):
+    """Return an error response."""
     return {
         "statusCode": status_code,
         "headers": {

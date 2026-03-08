@@ -1,229 +1,134 @@
-# --- REST API ---
-resource "aws_api_gateway_rest_api" "cloudtask" {
-  name        = "cloudtask-api-${var.environment}"
-  description = "Serverless Task Processing API"
+resource "aws_apigatewayv2_api" "api" {
+  name          = "${var.project_name}-api-${var.environment}"
+  protocol_type = "HTTP"
+  description   = "CloudTask API — serverless task processing"
 
-  endpoint_configuration {
-    types = ["REGIONAL"]
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers = ["Content-Type", "Authorization", "X-Api-Key"]
+    max_age       = 3600
   }
 }
 
-# --- /tasks resource ---
-resource "aws_api_gateway_resource" "tasks" {
-  rest_api_id = aws_api_gateway_rest_api.cloudtask.id
-  parent_id   = aws_api_gateway_rest_api.cloudtask.root_resource_id
-  path_part   = "tasks"
-}
-
-# --- /tasks/{id} resource ---
-resource "aws_api_gateway_resource" "task_by_id" {
-  rest_api_id = aws_api_gateway_rest_api.cloudtask.id
-  parent_id   = aws_api_gateway_resource.tasks.id
-  path_part   = "{id}"
-}
-
-# --- POST /tasks → create_task ---
-resource "aws_api_gateway_method" "create_task" {
-  rest_api_id      = aws_api_gateway_rest_api.cloudtask.id
-  resource_id      = aws_api_gateway_resource.tasks.id
-  http_method      = "POST"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "create_task" {
-  rest_api_id             = aws_api_gateway_rest_api.cloudtask.id
-  resource_id             = aws_api_gateway_resource.tasks.id
-  http_method             = aws_api_gateway_method.create_task.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.create_task.invoke_arn
-}
-
-# --- GET /tasks → list_tasks ---
-resource "aws_api_gateway_method" "list_tasks" {
-  rest_api_id      = aws_api_gateway_rest_api.cloudtask.id
-  resource_id      = aws_api_gateway_resource.tasks.id
-  http_method      = "GET"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "list_tasks" {
-  rest_api_id             = aws_api_gateway_rest_api.cloudtask.id
-  resource_id             = aws_api_gateway_resource.tasks.id
-  http_method             = aws_api_gateway_method.list_tasks.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.list_tasks.invoke_arn
-}
-
-# --- GET /tasks/{id} → get_task ---
-resource "aws_api_gateway_method" "get_task" {
-  rest_api_id      = aws_api_gateway_rest_api.cloudtask.id
-  resource_id      = aws_api_gateway_resource.task_by_id.id
-  http_method      = "GET"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "get_task" {
-  rest_api_id             = aws_api_gateway_rest_api.cloudtask.id
-  resource_id             = aws_api_gateway_resource.task_by_id.id
-  http_method             = aws_api_gateway_method.get_task.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.get_task.invoke_arn
-}
-
-# --- PUT /tasks/{id} → update_task ---
-resource "aws_api_gateway_method" "update_task" {
-  rest_api_id      = aws_api_gateway_rest_api.cloudtask.id
-  resource_id      = aws_api_gateway_resource.task_by_id.id
-  http_method      = "PUT"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "update_task" {
-  rest_api_id             = aws_api_gateway_rest_api.cloudtask.id
-  resource_id             = aws_api_gateway_resource.task_by_id.id
-  http_method             = aws_api_gateway_method.update_task.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.update_task.invoke_arn
-}
-
-# --- DELETE /tasks/{id} → delete_task ---
-resource "aws_api_gateway_method" "delete_task" {
-  rest_api_id      = aws_api_gateway_rest_api.cloudtask.id
-  resource_id      = aws_api_gateway_resource.task_by_id.id
-  http_method      = "DELETE"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "delete_task" {
-  rest_api_id             = aws_api_gateway_rest_api.cloudtask.id
-  resource_id             = aws_api_gateway_resource.task_by_id.id
-  http_method             = aws_api_gateway_method.delete_task.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.delete_task.invoke_arn
-}
-
-# --- Lambda Permissions for API Gateway ---
-resource "aws_lambda_permission" "create_task" {
-  statement_id  = "AllowAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.create_task.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.cloudtask.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "get_task" {
-  statement_id  = "AllowAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.get_task.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.cloudtask.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "list_tasks" {
-  statement_id  = "AllowAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.list_tasks.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.cloudtask.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "update_task" {
-  statement_id  = "AllowAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.update_task.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.cloudtask.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "delete_task" {
-  statement_id  = "AllowAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.delete_task.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.cloudtask.execution_arn}/*/*"
-}
-
-# --- API Key + Usage Plan ---
-resource "aws_api_gateway_api_key" "main" {
-  name    = "cloudtask-key-${var.environment}"
-  enabled = true
-}
-
-resource "aws_api_gateway_usage_plan" "main" {
-  name = "cloudtask-usage-plan-${var.environment}"
-
-  api_stages {
-    api_id = aws_api_gateway_rest_api.cloudtask.id
-    stage  = aws_api_gateway_stage.main.stage_name
-  }
-
-  throttle_settings {
-    burst_limit = 10
-    rate_limit  = 5
-  }
-
-  quota_settings {
-    limit  = 1000
-    period = "DAY"
-  }
-}
-
-resource "aws_api_gateway_usage_plan_key" "main" {
-  key_id        = aws_api_gateway_api_key.main.id
-  key_type      = "API_KEY"
-  usage_plan_id = aws_api_gateway_usage_plan.main.id
-}
-
-# --- Deployment + Stage ---
-resource "aws_api_gateway_deployment" "main" {
-  rest_api_id = aws_api_gateway_rest_api.cloudtask.id
-
-  depends_on = [
-    aws_api_gateway_integration.create_task,
-    aws_api_gateway_integration.get_task,
-    aws_api_gateway_integration.list_tasks,
-    aws_api_gateway_integration.update_task,
-    aws_api_gateway_integration.delete_task,
-  ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_api_gateway_stage" "main" {
-  deployment_id = aws_api_gateway_deployment.main.id
-  rest_api_id   = aws_api_gateway_rest_api.cloudtask.id
-  stage_name    = var.api_stage_name
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.api.id
+  name        = "$default"
+  auto_deploy = true
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
     format = jsonencode({
-      requestId      = "$context.requestId"
-      ip             = "$context.identity.sourceIp"
-      caller         = "$context.identity.caller"
-      user           = "$context.identity.user"
-      requestTime    = "$context.requestTime"
-      httpMethod     = "$context.httpMethod"
-      resourcePath   = "$context.resourcePath"
-      status         = "$context.status"
-      protocol       = "$context.protocol"
-      responseLength = "$context.responseLength"
+      requestId    = "$context.requestId"
+      ip           = "$context.identity.sourceIp"
+      method       = "$context.httpMethod"
+      path         = "$context.path"
+      status       = "$context.status"
+      responseTime = "$context.responseLatency"
     })
   }
 }
 
-resource "aws_cloudwatch_log_group" "api_gateway" {
-  name              = "/aws/apigateway/cloudtask-${var.environment}"
-  retention_in_days = 14
+# --- Lambda permissions ---
+
+resource "aws_lambda_permission" "create" {
+  function_name = aws_lambda_function.create_task.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "get" {
+  function_name = aws_lambda_function.get_task.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "list" {
+  function_name = aws_lambda_function.list_tasks.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "update" {
+  function_name = aws_lambda_function.update_task.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "delete" {
+  function_name = aws_lambda_function.delete_task.function_name
+  action        = "lambda:InvokeFunction"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# --- Integrations + Routes ---
+
+resource "aws_apigatewayv2_integration" "create" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.create_task.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "create" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /tasks"
+  target    = "integrations/${aws_apigatewayv2_integration.create.id}"
+}
+
+resource "aws_apigatewayv2_integration" "list" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.list_tasks.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "list" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /tasks"
+  target    = "integrations/${aws_apigatewayv2_integration.list.id}"
+}
+
+resource "aws_apigatewayv2_integration" "get" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.get_task.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "get" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "GET /tasks/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.get.id}"
+}
+
+resource "aws_apigatewayv2_integration" "update" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.update_task.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "update" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "PUT /tasks/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.update.id}"
+}
+
+resource "aws_apigatewayv2_integration" "delete" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.delete_task.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "delete" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "DELETE /tasks/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.delete.id}"
 }

@@ -1,41 +1,23 @@
+variable "project_name" {
+  description = "Project name used as prefix for all resources"
+  type        = string
+  default     = "cloudtask"
+}
+
 variable "aws_region" {
-  description = "AWS region for all resources"
+  description = "AWS region to deploy to"
   type        = string
   default     = "us-east-1"
 }
 
 variable "environment" {
-  description = "Deployment environment"
+  description = "Environment name (dev, staging, prod)"
   type        = string
-  default     = "prod"
-}
-
-variable "lambda_runtime" {
-  description = "Lambda runtime version"
-  type        = string
-  default     = "python3.12"
-}
-
-variable "lambda_timeout" {
-  description = "Lambda function timeout in seconds"
-  type        = number
-  default     = 10
-}
-
-variable "lambda_memory" {
-  description = "Lambda function memory in MB"
-  type        = number
-  default     = 128
+  default     = "dev"
 }
 
 variable "notification_email" {
-  description = "Email address for SNS task notifications"
+  description = "Email for SNS task completion notifications"
   type        = string
   default     = ""
-}
-
-variable "api_stage_name" {
-  description = "API Gateway stage name"
-  type        = string
-  default     = "v1"
 }

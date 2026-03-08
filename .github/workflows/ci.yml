@@ -7,50 +7,33 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run tests
-        run: PYTHONPATH=src python -m pytest tests/ -v --tb=short
-        env:
-          PYTHONPATH: src
-
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src/ tests/
 
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Lint
-        run: ruff check src/ tests/
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing
+        env:
+          PYTHONPATH: src
 
   terraform-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform init
-        run: cd terraform && terraform init -backend=false
-
-      - name: Terraform validate
-        run: cd terraform && terraform validate
-
-      - name: Terraform fmt check
-        run: cd terraform && terraform fmt -check -recursive
+      - run: cd terraform && terraform init -backend=false
+      - run: cd terraform && terraform validate
+      - run: cd terraform && terraform fmt -check

@@ -4,22 +4,22 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![Terraform](https://img.shields.io/badge/IaC-Terraform-purple)
 ![AWS](https://img.shields.io/badge/Cloud-AWS-orange)
-![Tests](https://img.shields.io/badge/tests-22%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-20%20passed-brightgreen)
 
-A **serverless REST API** with event-driven task processing, deployed 100% with **Terraform**. Zero servers to manage — just code and infrastructure as code.
+A **serverless REST API** with event-driven task processing, deployed 100% with **Terraform**. Zero servers to manage.
 
 ## Architecture
 
 ```
-Client → API Gateway → Lambda (CRUD) → DynamoDB
-                           ↓
-                       SQS Queue
-                           ↓
-                  Lambda (Worker) → processes task
-                           ↓
-                    SNS → email notification
-                           ↓
-                  CloudWatch → logs + alarms
+Client → API Gateway (HTTP) → Lambda (CRUD) → DynamoDB
+                                    ↓
+                                SQS Queue
+                                    ↓
+                           Lambda (Worker) → processes task
+                                    ↓
+                             SNS → email notification
+                                    ↓
+                           CloudWatch → logs + alarms
 ```
 
 **All infrastructure deployed via Terraform** — no ClickOps, no manual setup.
@@ -29,44 +29,37 @@ Client → API Gateway → Lambda (CRUD) → DynamoDB
 | Layer | Technology |
 |---|---|
 | **Runtime** | AWS Lambda (Python 3.12) |
-| **API** | API Gateway (REST, API key auth) |
+| **API** | API Gateway v2 (HTTP API) |
 | **Database** | DynamoDB (PAY_PER_REQUEST, encrypted, PITR) |
-| **Queue** | SQS + Dead Letter Queue (retry with backoff) |
-| **Notifications** | SNS (email on task completion) |
-| **Monitoring** | CloudWatch (logs, alarms on DLQ + errors) |
-| **IaC** | Terraform (S3 backend, DynamoDB lock) |
-| **CI/CD** | GitHub Actions (test + lint + terraform validate + deploy) |
-| **Security** | IAM least-privilege, encryption at rest, API key auth |
+| **Queue** | SQS + Dead Letter Queue (3 retries) |
+| **Notifications** | SNS (email on completion) |
+| **Monitoring** | CloudWatch (logs + DLQ alarm) |
+| **IaC** | Terraform (8 config files) |
+| **CI/CD** | GitHub Actions (lint + test + terraform validate) |
+| **Security** | IAM least-privilege (separate API vs Worker roles) |
 
 ## API Endpoints
 
-All endpoints require `x-api-key` header.
-
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/tasks` | Create a task (queues for processing) |
-| `GET` | `/tasks` | List all tasks (optional `?status=` filter) |
-| `GET` | `/tasks/{id}` | Get a single task |
+| `POST` | `/tasks` | Create task (queues for processing) |
+| `GET` | `/tasks` | List tasks (`?status=pending`) |
+| `GET` | `/tasks/{id}` | Get single task |
 | `PUT` | `/tasks/{id}` | Update task fields |
-| `DELETE` | `/tasks/{id}` | Delete a task |
+| `DELETE` | `/tasks/{id}` | Delete task |
 
 ### Create Task
 
 ```bash
-curl -X POST https://api-url/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
+curl -X POST https://YOUR-API-URL/tasks \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "Process monthly report",
-    "description": "Generate Q1 2026 analytics",
-    "priority": "high"
-  }'
+  -d '{"title": "Process report", "priority": "high"}'
 ```
 
 ```json
 {
-  "task_id": "550e8400-e29b-41d4-a716-446655440000",
-  "title": "Process monthly report",
+  "task_id": "550e8400-e29b-...",
+  "title": "Process report",
   "priority": "high",
   "status": "pending",
   "created_at": "2026-03-08T22:30:00+00:00"
@@ -75,58 +68,46 @@ curl -X POST https://api-url/v1/tasks \
 
 ### Event Flow
 
-1. **Client** sends `POST /tasks`
+1. **Client** → `POST /tasks`
 2. **Create Lambda** validates, stores in DynamoDB, sends to SQS
-3. **SQS** delivers message to Worker Lambda (batch of 5)
-4. **Worker Lambda** processes task, updates status to `completed`
-5. **SNS** sends email notification on completion
+3. **SQS** delivers to Worker Lambda (batch of 5)
+4. **Worker** processes task, updates status to `completed`
+5. **SNS** sends email notification
 6. **CloudWatch** monitors errors; DLQ catches failures after 3 retries
 
 ## Infrastructure (Terraform)
 
 ```
 terraform/
-├── main.tf           # Provider, S3 backend
+├── main.tf           # Provider config
 ├── variables.tf      # Configurable parameters
-├── outputs.tf        # API URL, ARNs, function names
-├── api_gateway.tf    # REST API + routes + API key + usage plan
+├── outputs.tf        # API URL, table name, queue URLs
+├── api_gateway.tf    # HTTP API + routes + integrations
 ├── lambda.tf         # 6 Lambda functions + SQS trigger
 ├── dynamodb.tf       # Table + GSI + encryption + PITR
 ├── sqs.tf            # Queue + DLQ + redrive policy
-├── sns.tf            # Notification topic + email subscription
-├── iam.tf            # Least-privilege roles + policies
-└── cloudwatch.tf     # Log groups + DLQ alarm + error alarm
+├── sns.tf            # Notification topic + email sub
+├── iam.tf            # Separate least-privilege roles (API vs Worker)
+└── cloudwatch.tf     # Log groups + DLQ alarm
 ```
 
 ### Security Highlights
 
-- **IAM Least Privilege** — Each Lambda only gets the permissions it needs
-- **Encryption at Rest** — DynamoDB server-side encryption enabled
-- **Point-in-Time Recovery** — DynamoDB PITR for data protection
-- **Dead Letter Queue** — Failed messages retry 3x, then go to DLQ
-- **API Key Auth** — All endpoints require API key via usage plan
-- **Rate Limiting** — 5 req/sec sustained, 10 burst, 1000/day quota
-- **CloudWatch Alarms** — DLQ messages and Lambda errors trigger SNS alerts
+- **Separate IAM Roles** — API Lambdas and Worker Lambda have different permissions
+- **Least Privilege** — API can't publish to SNS; Worker can't send to SQS
+- **Encryption at Rest** — DynamoDB server-side encryption
+- **Point-in-Time Recovery** — DynamoDB PITR enabled
+- **Dead Letter Queue** — 3 retries before DLQ, alarm on messages
+- **CORS** — Configured at API Gateway level
 
 ## Development
 
-### Prerequisites
-
-- Python 3.12+
-- AWS CLI configured
-- Terraform 1.5+
-
-### Local Development
-
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# Run tests
+# Run tests (20 tests)
 make test
-
-# Run tests with coverage
-make test-cov
 
 # Lint
 make lint
@@ -135,43 +116,24 @@ make lint
 make fmt
 ```
 
-### Deploy
+## Deploy
 
 ```bash
-# Validate Terraform
-make validate
+# Initialize Terraform
+make tf-init
 
-# Plan changes
-make plan
+# Preview changes
+make tf-plan
 
-# Apply (deploy to AWS)
-make deploy
+# Deploy to AWS
+make tf-apply
 ```
-
-### CI/CD Pipeline
-
-| Job | Trigger | What it does |
-|---|---|---|
-| **test** | Push/PR to main | Runs pytest |
-| **lint** | Push/PR to main | Ruff linter |
-| **terraform-validate** | Push/PR to main | `terraform validate` + `fmt -check` |
-| **deploy** | Push to main (terraform/ or src/ changes) | `terraform apply` |
 
 ## Project Structure
 
 ```
 cloudtask-api/
-├── terraform/              # All infrastructure as code
-│   ├── main.tf            
-│   ├── variables.tf       
-│   ├── outputs.tf         
-│   ├── api_gateway.tf     # REST API + routes
-│   ├── lambda.tf          # 6 functions + SQS trigger
-│   ├── dynamodb.tf        # Table + GSI
-│   ├── sqs.tf             # Queue + DLQ
-│   ├── sns.tf             # Notifications
-│   ├── iam.tf             # Least-privilege IAM
-│   └── cloudwatch.tf      # Monitoring + alarms
+├── terraform/              # Infrastructure as Code
 ├── src/
 │   ├── handlers/
 │   │   ├── create_task.py  # POST /tasks
@@ -180,42 +142,38 @@ cloudtask-api/
 │   │   ├── update_task.py  # PUT /tasks/{id}
 │   │   ├── delete_task.py  # DELETE /tasks/{id}
 │   │   └── process_task.py # SQS consumer (worker)
-│   ├── models/
-│   │   └── task.py         # Task schema + validation
 │   └── utils/
-│       ├── response.py     # Standardized API responses
-│       ├── auth.py         # API key validation
+│       ├── response.py     # Standardized responses
 │       └── logger.py       # Structured logging
 ├── tests/
 │   ├── conftest.py         # Mocked AWS (moto)
-│   ├── test_create_task.py # 7 tests
+│   ├── test_create_task.py # 10 tests
 │   ├── test_get_task.py    # 3 tests
-│   ├── test_list_tasks.py  # 3 tests
-│   └── test_process_task.py# 4 tests
+│   ├── test_list_tasks.py  # 4 tests
+│   └── test_process_task.py# 3 tests
 ├── .github/workflows/
-│   ├── ci.yml              # Test + lint + validate
-│   └── deploy.yml          # Terraform plan/apply
+│   └── ci.yml              # Lint + test + terraform validate
 ├── Makefile
 ├── requirements.txt
-├── LICENSE
-└── README.md
+├── requirements-dev.txt
+└── pyproject.toml
 ```
 
-## What This Proves
+## Skills Proven
 
 | Skill | Evidence |
 |---|---|
-| **Terraform** | Entire infrastructure in `.tf` files |
-| **Infrastructure as Code** | `terraform/` directory, CI validates on every PR |
-| **AWS Lambda** | 6 Lambda functions (5 CRUD + 1 worker) |
-| **Microservices** | Each Lambda = independent, single-responsibility service |
-| **Cloud Security** | IAM least-privilege, encryption, DLQ, rate limiting |
+| **Terraform** | 8 `.tf` files, full AWS infra |
+| **Infrastructure as Code** | CI validates terraform on every push |
+| **AWS Lambda** | 6 functions (5 CRUD + 1 worker) |
+| **Microservices** | Each Lambda = independent service |
+| **Cloud Security** | Separate IAM roles, least-privilege, encryption |
 | **Cloud Computing** | API Gateway + Lambda + DynamoDB + SQS + SNS + CloudWatch |
-| **Event-Driven Design** | SQS → Lambda → SNS notification chain |
-| **Observability** | CloudWatch log groups + metric alarms |
-| **Python** | All handlers in Python 3.12 with type hints |
-| **CI/CD** | GitHub Actions: test + lint + terraform validate + deploy |
-| **TDD** | 17+ tests with moto mocks for all AWS services |
+| **Event-Driven** | SQS → Lambda → SNS notification chain |
+| **Observability** | CloudWatch logs + DLQ alarm |
+| **Python** | Handlers in Python 3.12 |
+| **CI/CD** | GitHub Actions: lint + test + terraform validate |
+| **TDD** | 20 tests with moto mocks |
 
 ## Author
 

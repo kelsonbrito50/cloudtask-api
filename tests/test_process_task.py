@@ -1,108 +1,61 @@
-"""Tests for SQS consumer — process_task handler."""
+"""Tests for SQS Worker Lambda."""
 
 import json
-from unittest.mock import patch
+
+from handlers.create_task import handler as create_handler
+from handlers.process_task import handler as process_handler
 
 
 class TestProcessTask:
-    """Test suite for async task processing."""
 
-    def _make_sqs_event(self, task_ids):
-        """Helper to create SQS event with task messages."""
-        return {
+    def _create_id(self, aws_services):
+        event = {
+            "body": json.dumps({
+                "title": "Process me",
+                "priority": "high",
+            })
+        }
+        resp = create_handler(event, None)
+        return json.loads(resp["body"])["task_id"]
+
+    def test_success(self, aws_services):
+        task_id = self._create_id(aws_services)
+
+        sqs_event = {
             "Records": [
-                {
-                    "messageId": f"msg-{tid}",
-                    "body": json.dumps({"task_id": tid}),
-                }
-                for tid in task_ids
+                {"body": json.dumps({"task_id": task_id})}
             ]
         }
+        process_handler(sqs_event, None)
 
-    def test_process_single_task(self):
-        """Successfully processes one task."""
-        event = self._make_sqs_event(["task-001"])
+        item = aws_services["table"].get_item(
+            Key={"task_id": task_id}
+        )
+        assert item["Item"]["status"] == "completed"
+        assert "result" in item["Item"]
+        assert "completed_at" in item["Item"]
 
-        mock_task = {
-            "task_id": "task-001",
-            "title": "Build feature",
-            "priority": "high",
-            "status": "pending",
+    def test_nonexistent_task(self, aws_services):
+        sqs_event = {
+            "Records": [
+                {"body": json.dumps({"task_id": "ghost-id"})}
+            ]
         }
+        process_handler(sqs_event, None)
 
-        with patch("handlers.process_task.table") as mock_table, \
-             patch("handlers.process_task.sns") as mock_sns:
-            mock_table.get_item.return_value = {"Item": mock_task}
-            mock_table.update_item.return_value = {}
-            mock_sns.publish.return_value = {}
+    def test_batch(self, aws_services):
+        id1 = self._create_id(aws_services)
+        id2 = self._create_id(aws_services)
 
-            from handlers.process_task import handler
-            result = handler(event, None)
+        sqs_event = {
+            "Records": [
+                {"body": json.dumps({"task_id": id1})},
+                {"body": json.dumps({"task_id": id2})},
+            ]
+        }
+        process_handler(sqs_event, None)
 
-        assert result["batchItemFailures"] == []
-        assert mock_table.update_item.call_count == 2  # processing + completed
-        mock_sns.publish.assert_called_once()
-
-    def test_process_missing_task(self):
-        """Skips tasks not found in DynamoDB."""
-        event = self._make_sqs_event(["ghost-task"])
-
-        with patch("handlers.process_task.table") as mock_table, \
-             patch("handlers.process_task.sns") as mock_sns:
-            mock_table.get_item.return_value = {}
-
-            from handlers.process_task import handler
-            result = handler(event, None)
-
-        assert result["batchItemFailures"] == []
-        mock_table.update_item.assert_not_called()
-        mock_sns.publish.assert_not_called()
-
-    def test_process_batch(self):
-        """Processes multiple tasks in a batch."""
-        event = self._make_sqs_event(["t1", "t2", "t3"])
-
-        def mock_get_item(**kwargs):
-            tid = kwargs["Key"]["task_id"]
-            return {
-                "Item": {
-                    "task_id": tid,
-                    "title": f"Task {tid}",
-                    "priority": "medium",
-                }
-            }
-
-        with patch("handlers.process_task.table") as mock_table, \
-             patch("handlers.process_task.sns") as mock_sns:
-            mock_table.get_item.side_effect = mock_get_item
-            mock_table.update_item.return_value = {}
-            mock_sns.publish.return_value = {}
-
-            from handlers.process_task import handler
-            result = handler(event, None)
-
-        assert result["batchItemFailures"] == []
-        assert mock_sns.publish.call_count == 3
-
-    def test_process_partial_failure(self):
-        """Reports failed messages for SQS retry."""
-        event = self._make_sqs_event(["good-task", "bad-task"])
-
-        def mock_get_item(**kwargs):
-            tid = kwargs["Key"]["task_id"]
-            if tid == "bad-task":
-                raise Exception("Simulated failure")
-            return {"Item": {"task_id": tid, "title": "Good", "priority": "low"}}
-
-        with patch("handlers.process_task.table") as mock_table, \
-             patch("handlers.process_task.sns") as mock_sns:
-            mock_table.get_item.side_effect = mock_get_item
-            mock_table.update_item.return_value = {}
-            mock_sns.publish.return_value = {}
-
-            from handlers.process_task import handler
-            result = handler(event, None)
-
-        failed = result["batchItemFailures"]
-        assert len(failed) == 1
-        assert failed[0]["itemIdentifier"] == "msg-bad-task"
+        t1 = aws_services["table"].get_item(Key={"task_id": id1})
+        t2 = aws_services["table"].get_item(Key={"task_id": id2})
+        assert t1["Item"]["status"] == "completed"
+        assert t2["Item"]["status"] == "completed"

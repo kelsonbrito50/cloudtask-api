@@ -1,58 +1,52 @@
-"""Tests for GET /tasks — list_tasks handler."""
+"""Tests for GET /tasks."""
 
 import json
-from unittest.mock import patch
 
-from tests.conftest import make_event
+from handlers.create_task import handler as create_handler
+from handlers.list_tasks import handler as list_handler
 
 
 class TestListTasks:
-    """Test suite for task listing."""
 
-    def test_list_tasks_empty(self):
-        """Empty table returns empty list."""
-        event = make_event()
+    def _create(self, title="Task", priority="medium"):
+        event = {
+            "body": json.dumps({
+                "title": title,
+                "priority": priority,
+            })
+        }
+        create_handler(event, None)
 
-        with patch("handlers.list_tasks.table") as mock_table:
-            mock_table.scan.return_value = {"Items": []}
-
-            from handlers.list_tasks import handler
-            response = handler(event, None)
-
-        assert response["statusCode"] == 200
+    def test_empty(self, aws_services):
+        event = {"queryStringParameters": None}
+        response = list_handler(event, None)
         body = json.loads(response["body"])
-        assert body["tasks"] == []
         assert body["count"] == 0
+        assert body["tasks"] == []
 
-    def test_list_tasks_with_results(self):
-        """Returns all tasks."""
-        event = make_event()
-        items = [
-            {"task_id": "1", "title": "A", "status": "pending"},
-            {"task_id": "2", "title": "B", "status": "completed"},
-        ]
+    def test_multiple(self, aws_services):
+        self._create("Task 1")
+        self._create("Task 2")
+        self._create("Task 3")
 
-        with patch("handlers.list_tasks.table") as mock_table:
-            mock_table.scan.return_value = {"Items": items}
-
-            from handlers.list_tasks import handler
-            response = handler(event, None)
-
+        event = {"queryStringParameters": None}
+        response = list_handler(event, None)
         body = json.loads(response["body"])
-        assert body["count"] == 2
+        assert body["count"] == 3
 
-    def test_list_tasks_with_status_filter(self):
-        """Filters by status using GSI."""
-        event = make_event(query_params={"status": "pending"})
+    def test_filter_by_status(self, aws_services):
+        self._create("Pending task")
 
-        with patch("handlers.list_tasks.table") as mock_table:
-            mock_table.query.return_value = {
-                "Items": [{"task_id": "1", "status": "pending"}]
-            }
-
-            from handlers.list_tasks import handler
-            response = handler(event, None)
-
+        event = {"queryStringParameters": {"status": "pending"}}
+        response = list_handler(event, None)
         body = json.loads(response["body"])
         assert body["count"] == 1
-        mock_table.query.assert_called_once()
+        assert body["tasks"][0]["status"] == "pending"
+
+    def test_filter_no_matches(self, aws_services):
+        self._create("Pending task")
+
+        event = {"queryStringParameters": {"status": "completed"}}
+        response = list_handler(event, None)
+        body = json.loads(response["body"])
+        assert body["count"] == 0

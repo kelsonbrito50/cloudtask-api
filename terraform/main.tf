@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.5.0"
 
   required_providers {
     aws = {
@@ -8,13 +8,12 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket         = "cloudtask-terraform-state"
-    key            = "prod/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "cloudtask-terraform-lock"
-  }
+  # Uncomment after creating the S3 bucket manually
+  # backend "s3" {
+  #   bucket = "cloudtask-terraform-state"
+  #   key    = "terraform.tfstate"
+  #   region = "us-east-1"
+  # }
 }
 
 provider "aws" {
@@ -22,7 +21,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "cloudtask-api"
+      Project     = var.project_name
       Environment = var.environment
       ManagedBy   = "terraform"
     }

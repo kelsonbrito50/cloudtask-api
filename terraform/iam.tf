@@ -1,47 +1,27 @@
-# --- Lambda Execution Role ---
-resource "aws_iam_role" "lambda_exec" {
-  name = "cloudtask-lambda-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
 }
 
-# --- CloudWatch Logs Policy ---
-resource "aws_iam_role_policy" "lambda_logs" {
-  name = "cloudtask-lambda-logs"
-  role = aws_iam_role.lambda_exec.id
+# --- API Lambda Role (CRUD handlers) ---
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ]
-      Resource = "arn:aws:logs:${var.aws_region}:*:*"
-    }]
-  })
+resource "aws_iam_role" "api_lambda" {
+  name               = "${var.project_name}-api-role-${var.environment}"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
-# --- DynamoDB Access (least privilege) ---
-resource "aws_iam_role_policy" "dynamodb_access" {
-  name = "cloudtask-dynamodb-access"
-  role = aws_iam_role.lambda_exec.id
-
+resource "aws_iam_policy" "api_lambda" {
+  name = "${var.project_name}-api-policy-${var.environment}"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "DynamoDBAccess"
         Effect = "Allow"
         Action = [
           "dynamodb:PutItem",
@@ -55,47 +35,84 @@ resource "aws_iam_role_policy" "dynamodb_access" {
           aws_dynamodb_table.tasks.arn,
           "${aws_dynamodb_table.tasks.arn}/index/*"
         ]
+      },
+      {
+        Sid      = "SQSSendAccess"
+        Effect   = "Allow"
+        Action   = ["sqs:SendMessage"]
+        Resource = aws_sqs_queue.task_queue.arn
+      },
+      {
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
 }
 
-# --- SQS Access ---
-resource "aws_iam_role_policy" "sqs_access" {
-  name = "cloudtask-sqs-access"
-  role = aws_iam_role.lambda_exec.id
+resource "aws_iam_role_policy_attachment" "api_lambda" {
+  role       = aws_iam_role.api_lambda.name
+  policy_arn = aws_iam_policy.api_lambda.arn
+}
 
+# --- Worker Lambda Role (SQS consumer) ---
+
+resource "aws_iam_role" "worker_lambda" {
+  name               = "${var.project_name}-worker-role-${var.environment}"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_policy" "worker_lambda" {
+  name = "${var.project_name}-worker-policy-${var.environment}"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "SQSConsumeAccess"
         Effect = "Allow"
         Action = [
-          "sqs:SendMessage",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = [
-          aws_sqs_queue.task_queue.arn,
-          aws_sqs_queue.dlq.arn
+        Resource = aws_sqs_queue.task_queue.arn
+      },
+      {
+        Sid    = "DynamoDBUpdateAccess"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
         ]
+        Resource = aws_dynamodb_table.tasks.arn
+      },
+      {
+        Sid      = "SNSPublishAccess"
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = aws_sns_topic.task_notifications.arn
+      },
+      {
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
 }
 
-# --- SNS Publish ---
-resource "aws_iam_role_policy" "sns_publish" {
-  name = "cloudtask-sns-publish"
-  role = aws_iam_role.lambda_exec.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "sns:Publish"
-      Resource = aws_sns_topic.task_notifications.arn
-    }]
-  })
+resource "aws_iam_role_policy_attachment" "worker_lambda" {
+  role       = aws_iam_role.worker_lambda.name
+  policy_arn = aws_iam_policy.worker_lambda.arn
 }

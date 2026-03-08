@@ -1,76 +1,62 @@
-"""Shared test fixtures — mocked AWS services via moto."""
+"""Shared test fixtures — mocked AWS services."""
 
-import json
+import os
 
 import boto3
 import pytest
 from moto import mock_aws
 
-
-@pytest.fixture(autouse=True)
-def aws_env(monkeypatch):
-    """Set required environment variables for all tests."""
-    monkeypatch.setenv("TABLE_NAME", "test-tasks")
-    monkeypatch.setenv("QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/123456789/test-queue")
-    monkeypatch.setenv("TOPIC_ARN", "arn:aws:sns:us-east-1:123456789:test-topic")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
-    monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")
+os.environ["TABLE_NAME"] = "test-tasks"
+os.environ["QUEUE_URL"] = (
+    "https://sqs.us-east-1.amazonaws.com/123456789/test-queue"
+)
+os.environ["TOPIC_ARN"] = (
+    "arn:aws:sns:us-east-1:123456789:test-topic"
+)
+os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 
 
 @pytest.fixture
-def dynamodb_table():
-    """Create a mocked DynamoDB table."""
+def aws_services():
+    """Create mocked AWS services for testing."""
     with mock_aws():
-        client = boto3.resource("dynamodb", region_name="us-east-1")
-        table = client.create_table(
+        dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+        dynamodb.create_table(
             TableName="test-tasks",
-            KeySchema=[{"AttributeName": "task_id", "KeyType": "HASH"}],
+            KeySchema=[
+                {"AttributeName": "task_id", "KeyType": "HASH"},
+            ],
             AttributeDefinitions=[
                 {"AttributeName": "task_id", "AttributeType": "S"},
                 {"AttributeName": "status", "AttributeType": "S"},
             ],
-            GlobalSecondaryIndexes=[{
-                "IndexName": "status-index",
-                "KeySchema": [{"AttributeName": "status", "KeyType": "HASH"}],
-                "Projection": {"ProjectionType": "ALL"},
-            }],
+            GlobalSecondaryIndexes=[
+                {
+                    "IndexName": "status-index",
+                    "KeySchema": [
+                        {
+                            "AttributeName": "status",
+                            "KeyType": "HASH",
+                        },
+                    ],
+                    "Projection": {"ProjectionType": "ALL"},
+                }
+            ],
             BillingMode="PAY_PER_REQUEST",
         )
-        table.wait_until_exists()
-        yield table
 
+        sqs = boto3.client("sqs", region_name="us-east-1")
+        sqs.create_queue(QueueName="test-queue")
 
-@pytest.fixture
-def sqs_queue():
-    """Create a mocked SQS queue."""
-    with mock_aws():
-        client = boto3.client("sqs", region_name="us-east-1")
-        response = client.create_queue(QueueName="test-queue")
-        yield response["QueueUrl"]
+        sns = boto3.client("sns", region_name="us-east-1")
+        topic = sns.create_topic(Name="test-topic")
+        os.environ["TOPIC_ARN"] = topic["TopicArn"]
 
-
-@pytest.fixture
-def sns_topic():
-    """Create a mocked SNS topic."""
-    with mock_aws():
-        client = boto3.client("sns", region_name="us-east-1")
-        response = client.create_topic(Name="test-topic")
-        yield response["TopicArn"]
-
-
-def make_event(
-    method="GET", path="/tasks", body=None,
-    path_params=None, query_params=None,
-):
-    """Helper to create API Gateway proxy event."""
-    event = {
-        "httpMethod": method,
-        "path": path,
-        "headers": {"Content-Type": "application/json"},
-        "pathParameters": path_params,
-        "queryStringParameters": query_params,
-        "body": json.dumps(body) if body else None,
-    }
-    return event
+        yield {
+            "dynamodb": dynamodb,
+            "sqs": sqs,
+            "sns": sns,
+            "table": dynamodb.Table("test-tasks"),
+        }

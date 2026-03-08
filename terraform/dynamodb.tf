@@ -1,5 +1,5 @@
 resource "aws_dynamodb_table" "tasks" {
-  name         = "cloudtask-tasks-${var.environment}"
+  name         = "${var.project_name}-tasks-${var.environment}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "task_id"
 
@@ -25,9 +25,5 @@ resource "aws_dynamodb_table" "tasks" {
 
   point_in_time_recovery {
     enabled = true
-  }
-
-  tags = {
-    Name = "cloudtask-tasks"
   }
 }

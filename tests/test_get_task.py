@@ -1,52 +1,33 @@
-"""Tests for GET /tasks/{id} — get_task handler."""
+"""Tests for GET /tasks/{id}."""
 
 import json
-from unittest.mock import patch
 
-from tests.conftest import make_event
+from handlers.create_task import handler as create_handler
+from handlers.get_task import handler as get_handler
 
 
 class TestGetTask:
-    """Test suite for single task retrieval."""
 
-    def test_get_task_success(self):
-        """Existing task returns 200 with task data."""
-        event = make_event(path_params={"id": "abc-123"})
+    def _create(self, title="Test Task"):
+        event = {"body": json.dumps({"title": title})}
+        resp = create_handler(event, None)
+        return json.loads(resp["body"])
 
-        mock_item = {
-            "task_id": "abc-123",
-            "title": "Test task",
-            "status": "pending",
-        }
-
-        with patch("handlers.get_task.table") as mock_table:
-            mock_table.get_item.return_value = {"Item": mock_item}
-
-            from handlers.get_task import handler
-            response = handler(event, None)
+    def test_get_existing(self, aws_services):
+        task = self._create()
+        event = {"pathParameters": {"id": task["task_id"]}}
+        response = get_handler(event, None)
 
         assert response["statusCode"] == 200
         body = json.loads(response["body"])
-        assert body["task_id"] == "abc-123"
-        assert body["title"] == "Test task"
+        assert body["title"] == "Test Task"
 
-    def test_get_task_not_found(self):
-        """Non-existent task returns 404."""
-        event = make_event(path_params={"id": "nonexistent"})
-
-        with patch("handlers.get_task.table") as mock_table:
-            mock_table.get_item.return_value = {}
-
-            from handlers.get_task import handler
-            response = handler(event, None)
-
+    def test_not_found(self, aws_services):
+        event = {"pathParameters": {"id": "does-not-exist"}}
+        response = get_handler(event, None)
         assert response["statusCode"] == 404
 
-    def test_get_task_missing_id(self):
-        """Missing path parameter returns 400."""
-        event = make_event(path_params={})
-
-        from handlers.get_task import handler
-        response = handler(event, None)
-
+    def test_missing_id(self, aws_services):
+        event = {"pathParameters": {}}
+        response = get_handler(event, None)
         assert response["statusCode"] == 400
